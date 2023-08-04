@@ -709,7 +709,7 @@ extern {
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
-struct EVP_CIPHER_CTX(c_void);
+struct EVP_CIPHER_CTX(*mut EVP_CIPHER_CTX);
 
 impl Drop for EVP_CIPHER_CTX {
     fn drop(&mut self) {

@@ -37,6 +37,7 @@ use libc::c_int;
 use libc::c_long;
 use libc::c_uint;
 use libc::c_void;
+use libc::c_uchar;
 
 use crate::Error;
 use crate::Result;
@@ -504,14 +505,26 @@ impl Handshake {
     }
 
     pub fn set_min_proto_version(&mut self, version: u16) -> Result<()> {
+        #[cfg(not(feature = "openssl"))]
         map_result(unsafe {
             SSL_set_min_proto_version(self.as_mut_ptr(), version)
+        });
+
+        #[cfg(feature = "openssl")]
+        map_result(unsafe {
+            SSL_set_min_proto_version(self.as_mut_ptr(), i32::from(version))
         })
     }
 
     pub fn set_max_proto_version(&mut self, version: u16) -> Result<()> {
+        #[cfg(not(feature = "openssl"))]
         map_result(unsafe {
             SSL_set_max_proto_version(self.as_mut_ptr(), version)
+        });
+
+        #[cfg(feature = "openssl")]
+        map_result(unsafe {
+            SSL_set_max_proto_version(self.as_mut_ptr(),  i32::from(version))
         })
     }
 
@@ -598,8 +611,13 @@ impl Handshake {
                 return Err(Error::TlsFail);
             }
 
-            let session = ptr::null_mut() as *mut SSL_SESSION;
-                // SSL_SESSION_from_bytes(session.as_ptr(), session.len(), ctx);
+            // let session = ptr::null_mut() as *mut SSL_SESSION;
+            #[cfg(not(feature = "openssl"))]
+            let session = SSL_SESSION_from_bytes(session.as_ptr(), session.len(), ctx);
+
+            #[cfg(feature = "openssl")]
+            let mut a: *mut SSL_SESSION = std::ptr::null_mut();
+            let session = d2i_SSL_SESSION(&mut a, &mut session.as_ptr(), session.len() as c_long);
 
             if session.is_null() {
                 return Err(Error::TlsFail);
@@ -1533,6 +1551,13 @@ extern {
         new_func: *const c_void, dup_func: *const c_void,
         free_func: *const c_void,
     ) -> c_int;
+
+    #[cfg(feature = "openssl")]
+    fn d2i_SSL_SESSION(
+        a: *mut *mut SSL_SESSION,
+        pp: *mut *const c_uchar,
+        len: c_long,
+    ) -> *mut SSL_SESSION;
 }
 
 // OpenSSL compatibility functions.
@@ -1571,7 +1596,7 @@ unsafe fn SSL_CTX_set_session_cache_mode(ctx: *mut SSL_CTX, mode: c_int) -> c_in
 
 #[cfg(feature = "openssl")]
 #[allow(non_snake_case)]
-unsafe fn SSL_set_min_proto_version(s: *mut SSL, version: u16) {
+unsafe fn SSL_set_min_proto_version(s: *mut SSL, version: i32) -> c_int {
     const SSL_CTRL_SET_MIN_PROTO_VERSION: c_int = 123;
 
     SSL_ctrl(
@@ -1579,12 +1604,12 @@ unsafe fn SSL_set_min_proto_version(s: *mut SSL, version: u16) {
         SSL_CTRL_SET_MIN_PROTO_VERSION,
         version as c_long,
         ptr::null_mut(),
-    );
+    ) as c_int
 }
 
 #[cfg(feature = "openssl")]
 #[allow(non_snake_case)]
-unsafe fn SSL_set_max_proto_version(s: *mut SSL, version: u16) {
+unsafe fn SSL_set_max_proto_version(s: *mut SSL, version: i32) -> c_int {
     const SSL_CTRL_SET_MAX_PROTO_VERSION: c_int = 124;
 
     SSL_ctrl(
@@ -1592,7 +1617,7 @@ unsafe fn SSL_set_max_proto_version(s: *mut SSL, version: u16) {
         SSL_CTRL_SET_MAX_PROTO_VERSION,
         version as c_long,
         ptr::null_mut(),
-    );
+    ) as c_int
 }
 
 #[cfg(feature = "openssl")]
